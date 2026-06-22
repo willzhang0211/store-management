@@ -642,7 +642,13 @@ async function saveCategoryEdit() {
         }
         // 调用精细API更新业态
         if (typeof API !== 'undefined' && API.getToken()) {
-            API.updateCategory(id, { name, icon, color, desc }).catch(e => console.warn('API更新业态失败:', e));
+            try {
+                await API.updateCategory(id, { name, icon, color, desc });
+            } catch (e) {
+                console.error('API更新业态失败:', e);
+                showToast('保存失败: ' + e.message, 'error');
+                return;
+            }
         }
     } else {
         let newId;
@@ -1071,7 +1077,13 @@ async function saveStoreEdit() {
         }
         // 调用精细API更新
         if (typeof API !== 'undefined' && API.getToken()) {
-            API.updateStore(id, storePayload).catch(e => console.warn('API更新店铺失败:', e));
+            try {
+                await API.updateStore(id, storePayload);
+            } catch (e) {
+                console.error('API更新店铺失败:', e);
+                showToast('保存失败: ' + e.message, 'error');
+                return;
+            }
         }
     } else {
         let newId;
@@ -1607,6 +1619,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (savedUser && token) {
         try {
             currentUser = JSON.parse(savedUser);
+            // 恢复 API token 状态
+            if (typeof API !== 'undefined') API.setToken(token);
             if (savedPage) showPage(savedPage);
             if (currentUser.role === 'admin') {
                 initAdminPage();

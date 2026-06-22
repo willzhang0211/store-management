@@ -951,6 +951,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (savedUser && token) {
         try {
             mCurrentUser = JSON.parse(savedUser);
+            // 恢复 API token 状态
+            if (typeof API !== 'undefined') API.setToken(token);
             if (savedPage) mShowPage(savedPage);
             if (mCurrentUser.role === 'admin') {
                 mInitAdmin();
