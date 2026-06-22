@@ -254,6 +254,14 @@ async function initAppData() {
             } else {
                 console.log('Supabase 数据库为空，等待录入');
             }
+            // 同步到 localStorage 作为离线缓存
+            try {
+                localStorage.setItem('sm_version', String(DATA_VERSION));
+                localStorage.setItem('sm_dailyData', JSON.stringify(dailyData));
+                localStorage.setItem('sm_stores', JSON.stringify(storeList));
+                localStorage.setItem('sm_managers', JSON.stringify(managerAccounts));
+                localStorage.setItem('sm_categories', JSON.stringify(categoryList));
+            } catch (e) {}
             return true;
         } catch (e) {
             console.warn('Supabase 加载失败，尝试本地存储', e);
