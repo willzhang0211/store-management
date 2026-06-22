@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>店铺经营管理平台</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="chart.umd.min.js"></script>
+    <script src="xlsx.full.min.js"></script>
+</head>
+<body>
+<script>
+// 设备自动检测：手机访问跳转到手机版
+(function(){var m=/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);if(m&&!sessionStorage.getItem('sm_r')){sessionStorage.setItem('sm_r','1');window.location.replace('mobile.html');return;}sessionStorage.removeItem('sm_r');})();
+</script>
+<!-- 加载遮罩 -->
+<div id="loading-overlay" style="position:fixed;inset:0;background:#f5f7fa;display:flex;align-items:center;justify-content:center;z-index:99999;">
+    <div style="text-align:center;">
+        <div style="font-size:40px;margin-bottom:12px;animation:spin 1s linear infinite;">⚙️</div>
+        <div style="color:#888;font-size:14px;">正在加载数据...</div>
+    </div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
+<div id="app">
+    <!-- ========== 登录页 ========== -->
+    <div id="page-login" class="page active">
+        <div class="login-container">
+            <div class="login-card">
+                <div class="login-logo">
+                    <div class="logo-icon"><svg viewBox="0 0 48 48" width="48" height="48"><rect x="6" y="18" width="36" height="24" rx="4" fill="#1677ff" opacity="0.15"/><rect x="2" y="14" width="44" height="28" rx="6" fill="#1677ff" opacity="0.3"/><path d="M12 10 L24 2 L36 10" fill="#1677ff" opacity="0.5"/><rect x="10" y="20" width="12" height="12" rx="2" fill="#1677ff"/><rect x="26" y="20" width="12" height="12" rx="2" fill="#1677ff" opacity="0.6"/></svg></div>
+                    <h1>店铺经营管理平台</h1>
+                    <p class="login-subtitle">每日数据上报 · 智能分析 · 经营决策</p>
+                </div>
+                <div class="login-tabs">
+                    <button class="login-tab active" data-role="admin" onclick="switchLoginTab('admin')">管理者登录</button>
+                    <button class="login-tab" data-role="store" onclick="switchLoginTab('store')">店长登录</button>
+                </div>
+                <div class="login-form" id="admin-login-form">
+                    <div class="form-group"><label>账号</label><input type="text" id="admin-user" placeholder="请输入管理账号" value="admin"></div>
+                    <div class="form-group"><label>密码</label><input type="password" id="admin-pass" placeholder="请输入密码" value="admin123"></div>
+                    <button class="btn-primary btn-login" onclick="handleLogin('admin')">进入管理后台</button>
+                </div>
+                <div class="login-form hidden" id="store-login-form">
+                    <div class="form-group"><label>手机号</label><input type="tel" id="store-phone" placeholder="请输入绑定的手机号" maxlength="11"></div>
+                    <div class="form-group"><label>密码</label><input type="password" id="store-pass" placeholder="默认密码123456" value="123456"></div>
+                    <button class="btn-primary btn-login" onclick="handleLogin('store')">进入数据填报</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 店长端 ========== -->
+    <div id="page-store" class="page">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <span class="store-name-badge" id="store-name-badge"></span>
+                <span class="store-manager-info" id="store-manager-info"></span>
+            </div>
+            <div class="top-bar-right">
+                <button class="btn-sm" onclick="showChangePassword()">修改密码</button>
+                <button class="btn-logout" onclick="handleLogout()">退出</button>
+            </div>
+        </div>
+        <div class="store-content">
+            <div class="store-nav">
+                <button class="store-nav-btn active" data-tab="report" onclick="switchStoreTab('report')">数据填报</button>
+                <button class="store-nav-btn" data-tab="query" onclick="switchStoreTab('query')">查询修改</button>
+            </div>
+
+            <!-- 数据填报 -->
+            <div id="store-tab-report" class="store-tab-content active">
+                <div class="section-header"><h2>每日经营数据上报</h2><p>请填写今日的经营数据，带 * 为必填项，备注说明为选填</p></div>
+                <div class="data-form-card">
+                    <form id="daily-report-form" onsubmit="submitDailyReport(event)">
+                        <div class="form-row">
+                            <div class="form-group"><label>上报日期 <span class="required">*</span></label><input type="date" id="report-date" required></div>
+                            <div class="form-group hidden" id="store-select-container"><label>选择店铺 <span class="required">*</span></label><select id="store-select" onchange="switchCurrentStore()"></select></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>销售额（元） <span class="required">*</span></label><input type="number" id="report-sales" placeholder="如：15800" required min="0.01" step="0.01" oninput="calcAutoFields()"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>客流量（人次） <span class="required">*</span></label><input type="number" id="report-visitors" placeholder="如：320" required min="1" oninput="calcAutoFields()"></div>
+                            <div class="form-group"><label>购买人次 <span class="required">*</span></label><input type="number" id="report-buyers" placeholder="如：180" required min="1" oninput="calcAutoFields()"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>客单价（元）</label><input type="number" id="report-avg-price" placeholder="自动计算" readonly class="auto-field"></div>
+                            <div class="form-group"><label>转化率（%）</label><input type="number" id="report-conversion" placeholder="自动计算" readonly class="auto-field"></div>
+                        </div>
+                        <div class="form-group"><label>备注说明</label><textarea id="report-notes" placeholder="请填写备注（如：正常营业/促销活动/设备维修等）" rows="3"></textarea></div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn-primary">提交数据</button>
+                            <button type="button" class="btn-secondary" onclick="clearForm()">清空重填</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 查询修改 -->
+            <div id="store-tab-query" class="store-tab-content">
+                <div class="section-header"><h2>历史数据查询与修改</h2><p>查看已填报数据，如需修正请点击修改按钮</p></div>
+                <div class="query-filter-bar">
+                    <div class="form-group"><label>起始日期</label><input type="date" id="store-query-start"></div>
+                    <div class="form-group"><label>截止日期</label><input type="date" id="store-query-end"></div>
+                    <button class="btn-primary btn-sm" onclick="loadStoreHistory()">查询</button>
+                </div>
+                <div class="history-table-container">
+                    <table class="data-table" id="store-history-table">
+                        <thead><tr><th>日期</th><th>销售额</th><th>客流量</th><th>购买人次</th><th>客单价</th><th>转化率</th><th>状态</th><th>操作</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 修改密码弹窗 -->
+        <div id="modal-change-password" class="modal hidden">
+            <div class="modal-card">
+                <div class="modal-header"><h3>修改密码</h3><button class="modal-close" onclick="hideChangePassword()">×</button></div>
+                <div class="modal-body">
+                    <div class="form-group"><label>当前密码</label><input type="password" id="old-password" placeholder="请输入当前密码"></div>
+                    <div class="form-group"><label>新密码</label><input type="password" id="new-password" placeholder="请输入新密码（至少6位）"></div>
+                    <div class="form-group"><label>确认新密码</label><input type="password" id="confirm-password" placeholder="请再次输入新密码"></div>
+                </div>
+                <div class="modal-footer"><button class="btn-primary" onclick="changePassword()">确认修改</button><button class="btn-secondary" onclick="hideChangePassword()">取消</button></div>
+            </div>
+        </div>
+
+        <!-- 修改数据弹窗 -->
+        <div id="modal-edit-data" class="modal hidden">
+            <div class="modal-card">
+                <div class="modal-header"><h3 id="edit-data-title">修改数据</h3><button class="modal-close" onclick="hideEditDataModal()">×</button></div>
+                <div class="modal-body">
+                    <input type="hidden" id="edit-data-date">
+                    <div class="form-row">
+                        <div class="form-group"><label>销售额（元） <span class="required">*</span></label><input type="number" id="edit-sales" min="0.01" step="0.01" oninput="calcEditAutoFields()"></div>
+                        <div class="form-group"><label>客流量（人次） <span class="required">*</span></label><input type="number" id="edit-visitors" min="1" oninput="calcEditAutoFields()"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>购买人次 <span class="required">*</span></label><input type="number" id="edit-buyers" min="1" oninput="calcEditAutoFields()"></div>
+                        <div class="form-group"><label>备注</label><input type="text" id="edit-notes"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>客单价</label><input type="number" id="edit-avg-price" readonly class="auto-field"></div>
+                        <div class="form-group"><label>转化率</label><input type="number" id="edit-conversion" readonly class="auto-field"></div>
+                    </div>
+                </div>
+                <div class="modal-footer"><button class="btn-primary" onclick="saveEditData()">保存修改</button><button class="btn-secondary" onclick="hideEditDataModal()">取消</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 管理后台 ========== -->
+    <div id="page-admin" class="page">
+        <div class="sidebar">
+            <div class="sidebar-logo"><svg viewBox="0 0 32 32" width="24" height="24"><rect x="2" y="8" width="28" height="20" rx="4" fill="#1677ff"/><path d="M8 4 L16 0 L24 4" fill="#1677ff" opacity="0.6"/><rect x="6" y="12" width="8" height="8" rx="1" fill="white" opacity="0.9"/><rect x="18" y="12" width="8" height="8" rx="1" fill="white" opacity="0.7"/></svg><span>经营管理</span></div>
+            <nav class="sidebar-nav">
+                <a class="nav-item active" data-section="dashboard" onclick="switchSection('dashboard')">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><rect x="1" y="11" width="6" height="8" rx="1" fill="currentColor"/><rect x="8" y="5" width="6" height="14" rx="1" fill="currentColor" opacity="0.7"/><rect x="15" y="8" width="4" height="11" rx="1" fill="currentColor" opacity="0.5"/></svg>
+                    数据总看板
+                </a>
+                <a class="nav-item" data-section="dataquery" onclick="switchSection('dataquery')">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><rect x="2" y="3" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 7 H18 M2 11 H18 M7 3 V17 M12 3 V17" stroke="currentColor" stroke-width="1" opacity="0.5"/><circle cx="10" cy="9" r="2.5" fill="currentColor" opacity="0.8"/></svg>
+                    数据查询
+                </a>
+                <a class="nav-item" data-section="stores" onclick="switchSection('stores')">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><rect x="3" y="5" width="14" height="12" rx="2" fill="currentColor"/><path d="M5 5 L10 1 L15 5" fill="currentColor" opacity="0.6"/></svg>
+                    店铺管理
+                </a>
+                <a class="nav-item" data-section="categories" onclick="switchSection('categories')">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><rect x="2" y="2" width="16" height="16" rx="3" fill="currentColor" opacity="0.6"/><rect x="5" y="5" width="4" height="4" rx="1" fill="white" opacity="0.9"/><rect x="11" y="5" width="4" height="4" rx="1" fill="white" opacity="0.9"/><rect x="5" y="11" width="4" height="4" rx="1" fill="white" opacity="0.9"/><rect x="11" y="11" width="4" height="4" rx="1" fill="white" opacity="0.9"/></svg>
+                    业态管理
+                </a>
+                <a class="nav-item" data-section="analysis" onclick="switchSection('analysis')">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><polyline points="3,15 7,9 11,12 17,4" stroke="currentColor" fill="none" stroke-width="2"/></svg>
+                    数据分析
+                </a>
+                <a class="nav-item" data-section="compare" onclick="switchSection('compare')">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><rect x="2" y="10" width="4" height="8" rx="1" fill="currentColor"/><rect x="8" y="4" width="4" height="14" rx="1" fill="currentColor" opacity="0.7"/><rect x="14" y="7" width="4" height="11" rx="1" fill="currentColor" opacity="0.5"/></svg>
+                    对比排名
+                </a>
+                <a class="nav-item" data-section="trend" onclick="switchSection('trend')">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><path d="M3 17 L8 10 L12 13 L17 5" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round"/></svg>
+                    趋势追踪
+                </a>
+                <a class="nav-item" data-section="alerts" onclick="switchSection('alerts')">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><path d="M10 2 L18 16 H2 Z" fill="currentColor"/><rect x="9" y="7" width="2" height="4" rx="1" fill="white"/><circle cx="10" cy="13.5" r="1" fill="white"/></svg>
+                    异常预警
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="btn-sm sidebar-btn" onclick="showAdminChangePassword()" style="background:transparent;color:rgba(255,255,255,0.65);border:1px solid rgba(255,255,255,0.15);width:100%;padding:8px;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:8px;">修改密码</button>
+                <button class="btn-logout sidebar-logout" onclick="handleLogout()">退出登录</button>
+            </div>
+        </div>
+        <!-- 侧边栏遮罩（手机端） -->
+        <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMobileSidebar()"></div>
+
+        <!-- 手机端顶部导航 -->
+        <div class="mobile-header" id="mobile-header">
+            <button class="mobile-menu-btn" onclick="toggleMobileSidebar()">☰</button>
+            <span class="mobile-header-title" id="mobile-title">数据总看板</span>
+            <button class="mobile-header-logout" onclick="handleLogout()">退出</button>
+        </div>
+
+        <div class="admin-main">
+            <!-- ===== 数据总看板（合并经营概览） ===== -->
+            <div id="section-dashboard" class="section active">
+                <div class="section-top-bar">
+                    <h2>数据总看板</h2>
+                    <div class="time-filter-bar" id="dashboard-time-filter"></div>
+                </div>
+                <!-- 核心指标卡片 -->
+                <div class="dashboard-stats">
+                    <div class="dash-big-card dash-area"><div class="dash-icon">📐</div><div class="dash-info"><span class="dash-label">总经营面积</span><span class="dash-value" id="dash-total-area">--</span><span class="dash-unit">m²</span></div></div>
+                    <div class="dash-big-card dash-count"><div class="dash-icon">🏪</div><div class="dash-info"><span class="dash-label">总店铺数量</span><span class="dash-value" id="dash-total-stores">--</span><span class="dash-unit">家</span></div></div>
+                    <div class="dash-big-card dash-sales"><div class="dash-icon">💰</div><div class="dash-info"><span class="dash-label">总销售额</span><span class="dash-value" id="dash-total-sales">--</span><span class="dash-change" id="dash-sales-change">--</span></div></div>
+                    <div class="dash-big-card dash-visitors"><div class="dash-icon">👥</div><div class="dash-info"><span class="dash-label">总客流量</span><span class="dash-value" id="dash-total-visitors">--</span></div></div>
+                    <div class="dash-big-card dash-buyers"><div class="dash-icon">🛒</div><div class="dash-info"><span class="dash-label">总购买人次</span><span class="dash-value" id="dash-total-buyers">--</span></div></div>
+                    <div class="dash-big-card dash-conversion"><div class="dash-icon">📊</div><div class="dash-info"><span class="dash-label">平均转化率</span><span class="dash-value" id="dash-avg-conversion">--</span></div></div>
+                </div>
+                <!-- 业态汇总 -->
+                <div class="dashboard-category-row" id="dashboard-category-row"></div>
+                <!-- 图表 -->
+                <div class="dashboard-charts">
+                    <div class="chart-box"><h3>业态销售额占比</h3><canvas id="chart-dash-category"></canvas></div>
+                    <div class="chart-box"><h3>销售额趋势</h3><canvas id="chart-dash-trend"></canvas></div>
+                </div>
+            </div>
+
+            <!-- ===== 数据查询与下载 ===== -->
+            <div id="section-dataquery" class="section">
+                <div class="section-top-bar">
+                    <h2>数据查询与下载</h2>
+                    <div class="dataquery-controls">
+                        <select id="dq-preset" onchange="handleDqPresetChange()">
+                            <option value="today">当日</option>
+                            <option value="week">本周</option>
+                            <option value="month">本月</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                        <div class="custom-range" id="dq-custom">
+                            <input type="date" id="dq-start" onchange="refreshDataQuery()">
+                            <span class="separator">至</span>
+                            <input type="date" id="dq-end" onchange="refreshDataQuery()">
+                        </div>
+                        <select id="dq-category" onchange="refreshDataQuery()"></select>
+                        <input type="text" id="dq-search" placeholder="搜索店铺名称..." oninput="refreshDataQuery()">
+                        <button class="btn-primary btn-sm" onclick="downloadDataXLSX()">下载 XLSX</button>
+                    </div>
+                </div>
+                <div class="dataquery-summary" id="dq-summary"></div>
+                <div class="dataquery-table-container">
+                    <table class="data-table" id="dq-table">
+                        <thead><tr><th>店铺名称</th><th>商铺号</th><th>业态</th><th>面积(m²)</th><th>销售额</th><th>客流量</th><th>购买人次</th><th>客单价</th><th>转化率</th><th>坪效(元/m²)</th><th>状态</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ===== 店铺管理 ===== -->
+            <div id="section-stores" class="section">
+                <div class="section-top-bar">
+                    <h2>店铺管理</h2>
+                    <div class="store-actions-bar">
+                        <button class="btn-primary btn-sm" onclick="showAddStoreModal()">新增店铺</button>
+                        <button class="btn-danger btn-sm" onclick="resetAllStores()" style="margin-left:8px;">清空全部店铺</button>
+                        <select id="store-category-filter" onchange="filterStoreList()"></select>
+                        <input type="text" id="store-search" placeholder="搜索店铺名称..." oninput="filterStoreList()">
+                    </div>
+                </div>
+                <div class="store-grid" id="store-grid"></div>
+            </div>
+
+            <!-- ===== 业态管理 ===== -->
+            <div id="section-categories" class="section">
+                <div class="section-top-bar">
+                    <h2>业态管理</h2>
+                    <button class="btn-primary btn-sm" onclick="showAddCategoryModal()">新增业态</button>
+                </div>
+                <div class="category-manage-grid" id="category-manage-grid"></div>
+            </div>
+
+            <!-- ===== 数据分析 ===== -->
+            <div id="section-analysis" class="section">
+                <div class="section-top-bar">
+                    <h2>数据分析</h2>
+                    <div class="analysis-controls">
+                        <select id="analysis-store" onchange="refreshAnalysis()"><option value="all">全部店铺</option></select>
+                        <select id="analysis-metric" onchange="refreshAnalysis()"><option value="sales">销售额</option><option value="visitors">客流量</option><option value="buyers">购买人次</option><option value="avgPrice">客单价</option><option value="conversion">转化率</option><option value="efficiency">坪效</option></select>
+                        <div class="time-filter-bar" id="analysis-time-filter"></div>
+                    </div>
+                </div>
+                <div class="analysis-charts">
+                    <div class="chart-box large-chart"><h3 id="analysis-chart-title">全部店铺 · 销售额 · 近30天</h3><canvas id="chart-analysis-trend"></canvas></div>
+                    <div class="chart-box"><h3>数据分布</h3><canvas id="chart-analysis-distribution"></canvas></div>
+                </div>
+                <div class="analysis-charts">
+                    <div class="chart-box"><h3>同比环比</h3><canvas id="chart-analysis-compare"></canvas></div>
+                </div>
+                <div class="analysis-stats" id="analysis-stats"></div>
+            </div>
+
+            <!-- ===== 对比排名 ===== -->
+            <div id="section-compare" class="section">
+                <div class="section-top-bar">
+                    <h2>对比排名</h2>
+                    <div class="compare-controls">
+                        <select id="compare-metric" onchange="refreshCompare()"><option value="sales">销售额</option><option value="visitors">客流量</option><option value="buyers">购买人次</option><option value="avgPrice">客单价</option><option value="conversion">转化率</option><option value="efficiency">坪效</option></select>
+                        <select id="compare-category" onchange="refreshCompare()"></select>
+                        <div class="time-filter-bar" id="compare-time-filter"></div>
+                    </div>
+                </div>
+                <div class="compare-content">
+                    <div class="chart-box"><h3>店铺排名</h3><canvas id="chart-compare-ranking"></canvas></div>
+                    <div class="ranking-table-container"><table class="data-table ranking-table" id="ranking-table"><thead><tr><th>排名</th><th>店铺名称</th><th>业态</th><th>数值</th><th>较上期</th></tr></thead><tbody></tbody></table></div>
+                </div>
+            </div>
+
+            <!-- ===== 趋势追踪 ===== -->
+            <div id="section-trend" class="section">
+                <div class="section-top-bar">
+                    <h2>趋势追踪</h2>
+                    <div class="trend-controls">
+                        <select id="trend-store" onchange="refreshTrend()"><option value="all">全部店铺汇总</option></select>
+                        <select id="trend-metric" onchange="refreshTrend()"><option value="sales">销售额</option><option value="visitors">客流量</option><option value="buyers">购买人次</option><option value="avgPrice">客单价</option><option value="conversion">转化率</option><option value="efficiency">坪效</option></select>
+                        <div class="time-filter-bar" id="trend-time-filter"></div>
+                    </div>
+                </div>
+                <div class="trend-content">
+                    <div class="chart-box large-chart"><h3 id="trend-chart-title">全部店铺 · 销售额趋势</h3><canvas id="chart-trend-main"></canvas></div>
+                    <div class="trend-insights" id="trend-insights"></div>
+                </div>
+            </div>
+
+            <!-- ===== 异常预警（含未上报数据） ===== -->
+            <div id="section-alerts" class="section">
+                <div class="section-top-bar"><h2>异常预警</h2>
+                    <div class="alert-controls">
+                        <select id="alert-type" onchange="refreshAlerts()">
+                            <option value="all">全部类型</option>
+                            <option value="abnormal">数据异常</option>
+                            <option value="unreported">未上报数据</option>
+                            <option value="feedback">店长反馈</option>
+                        </select>
+                        <select id="alert-level" onchange="refreshAlerts()"><option value="all">全部级别</option><option value="high">高风险</option><option value="medium">中风险</option><option value="low">关注</option></select>
+                    </div>
+                </div>
+                <!-- 未上报数据面板 -->
+                <div id="unreported-panel" class="unreported-panel">
+                    <div class="unreported-summary" id="unreported-summary"></div>
+                    <div class="unreported-table-container">
+                        <table class="data-table" id="unreported-table">
+                            <thead><tr><th>店铺名称</th><th>业态</th><th>店长</th><th>联系电话</th><th>缺失上报日期</th><th>缺失天数</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- 异常预警列表 -->
+                <div class="alert-list" id="alert-list"></div>
+                <!-- 店长反馈面板 -->
+                <div id="feedback-panel" class="feedback-panel" style="display:none;">
+                    <div class="feedback-filter-bar">
+                        <div class="form-group"><label>起始日期</label><input type="date" id="feedback-start"></div>
+                        <div class="form-group"><label>截止日期</label><input type="date" id="feedback-end"></div>
+                        <input type="text" id="feedback-search" placeholder="搜索店铺名称..." oninput="refreshFeedback()" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+                        <button class="btn-primary btn-sm" onclick="refreshFeedback()">查询</button>
+                    </div>
+                    <div class="feedback-summary" id="feedback-summary"></div>
+                    <div class="feedback-table-container">
+                        <table class="data-table" id="feedback-table">
+                            <thead><tr><th>日期</th><th>店铺名称</th><th>业态</th><th>店长</th><th>联系电话</th><th>备注说明</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 店铺详情/编辑弹窗 ===== -->
+    <div id="modal-store-edit" class="modal hidden">
+        <div class="modal-card modal-card-lg">
+            <div class="modal-header"><h3 id="store-edit-title">店铺信息</h3><button class="modal-close" onclick="hideStoreEditModal()">×</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-store-id">
+                <div class="form-row">
+                    <div class="form-group"><label>商铺号 <span class="required">*</span></label><input type="text" id="edit-shop-no"></div>
+                    <div class="form-group"><label>店铺名称 <span class="required">*</span></label><input type="text" id="edit-store-name"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>业态 <span class="required">*</span></label><select id="edit-store-category"></select></div>
+                    <div class="form-group"><label>所在区域</label><input type="text" id="edit-store-area"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>店铺面积（m²）</label><input type="number" id="edit-store-area-size" min="0"></div>
+                    <div class="form-group"><label>店长姓名</label><input type="text" id="edit-store-manager"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>联系电话</label><input type="tel" id="edit-store-phone" maxlength="11"></div>
+                    <div class="form-group"></div>
+                </div>
+                <div class="store-data-query-section">
+                    <h4>每日经营数据</h4>
+                    <div class="query-filter-bar compact">
+                        <div class="form-group"><label>起始日期</label><input type="date" id="store-data-start"></div>
+                        <div class="form-group"><label>截止日期</label><input type="date" id="store-data-end"></div>
+                        <button class="btn-primary btn-sm" onclick="queryStoreDailyData()">查询</button>
+                    </div>
+                    <div class="history-table-container">
+                        <table class="data-table" id="store-daily-data-table">
+                            <thead><tr><th>日期</th><th>销售额</th><th>客流量</th><th>购买人次</th><th>客单价</th><th>转化率</th><th>操作</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="saveStoreEdit()">保存店铺信息</button>
+                <button class="btn-danger" id="btn-delete-store" onclick="deleteStore()" style="display:none;">删除店铺</button>
+                <button class="btn-secondary" onclick="hideStoreEditModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 业态编辑弹窗 ===== -->
+    <div id="modal-category-edit" class="modal hidden">
+        <div class="modal-card">
+            <div class="modal-header"><h3 id="category-edit-title">新增业态</h3><button class="modal-close" onclick="hideCategoryEditModal()">×</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-category-id">
+                <div class="form-group"><label>业态名称</label><input type="text" id="edit-category-name" placeholder="如：餐饮、便利店、美容美发等"></div>
+                <div class="form-row">
+                    <div class="form-group"><label>标识图标</label><input type="text" id="edit-category-icon" placeholder="输入emoji图标，如：🍜 🏪 💇"></div>
+                    <div class="form-group"><label>主题颜色</label><input type="color" id="edit-category-color" value="#1677ff" style="height:38px;padding:2px 4px;"></div>
+                </div>
+                <div class="form-group"><label>备注说明</label><textarea id="edit-category-desc" placeholder="业态简要说明（可选）" rows="2"></textarea></div>
+            </div>
+            <div class="modal-footer"><button class="btn-primary" onclick="saveCategoryEdit()">保存</button><button class="btn-secondary" onclick="hideCategoryEditModal()">取消</button></div>
+        </div>
+    </div>
+
+    <!-- ===== 管理员修改数据弹窗 ===== -->
+    <div id="modal-admin-edit-data" class="modal hidden">
+        <div class="modal-card">
+            <div class="modal-header"><h3 id="admin-edit-data-title">修改数据</h3><button class="modal-close" onclick="hideAdminEditDataModal()">×</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="admin-edit-store-id">
+                <input type="hidden" id="admin-edit-date">
+                <div class="form-row">
+                    <div class="form-group"><label>销售额（元） <span class="required">*</span></label><input type="number" id="admin-edit-sales" min="0.01" step="0.01" oninput="calcAdminEditAutoFields()"></div>
+                    <div class="form-group"><label>客流量（人次） <span class="required">*</span></label><input type="number" id="admin-edit-visitors" min="1" oninput="calcAdminEditAutoFields()"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>购买人次 <span class="required">*</span></label><input type="number" id="admin-edit-buyers" min="1" oninput="calcAdminEditAutoFields()"></div>
+                    <div class="form-group"><label>备注</label><input type="text" id="admin-edit-notes"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>客单价</label><input type="number" id="admin-edit-avg-price" readonly class="auto-field"></div>
+                    <div class="form-group"><label>转化率</label><input type="number" id="admin-edit-conversion" readonly class="auto-field"></div>
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn-primary" onclick="saveAdminEditData()">保存修改</button><button class="btn-secondary" onclick="hideAdminEditDataModal()">取消</button></div>
+        </div>
+    </div>
+
+    <!-- ===== 管理员修改密码弹窗 ===== -->
+    <div id="modal-admin-change-password" class="modal hidden">
+        <div class="modal-card">
+            <div class="modal-header"><h3>修改管理员密码</h3><button class="modal-close" onclick="hideAdminChangePassword()">×</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>当前密码</label><input type="password" id="admin-old-password" placeholder="请输入当前密码"></div>
+                <div class="form-group"><label>新密码</label><input type="password" id="admin-new-password" placeholder="请输入新密码（至少6位）"></div>
+                <div class="form-group"><label>确认新密码</label><input type="password" id="admin-confirm-password" placeholder="请再次输入新密码"></div>
+            </div>
+            <div class="modal-footer"><button class="btn-primary" onclick="adminChangePassword()">确认修改</button><button class="btn-secondary" onclick="hideAdminChangePassword()">取消</button></div>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div class="toast-container" id="toast-container"></div>
+</div>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/bcryptjs/2.4.3/bcrypt.min.js"></script>
+<script src="supabase-client.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script>
+// 异步初始化：从服务器加载数据
+(async function() {
+    await initAppData();
+    var overlay = document.getElementById('loading-overlay');
+    if (overlay) overlay.style.display = 'none';
+    // 定时从服务器刷新数据（60秒，仅管理端）
+    setInterval(async function() {
+        if (currentUser && currentUser.role === 'admin') {
+            var oldStores = storeList ? storeList.length : 0;
+            var refreshed = await refreshFromServer();
+            if (refreshed && storeList.length !== oldStores) {
+                // 店铺数量变化，重新渲染当前页
+                if (typeof initAdminPage === 'function' && document.getElementById('page-admin').classList.contains('active')) {
+                    var activeSec = document.querySelector('.nav-item.active');
+                    if (activeSec) activeSec.click();
+                }
+            }
+        }
+    }, 60000);
+})();
+</script>
+</body>
+</html>

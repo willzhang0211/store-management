@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>店铺经营管理平台</title>
+    <script>
+    // 设备自动检测跳转
+    (function() {
+        var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (!isMobile && !sessionStorage.getItem('sm_redirected') && location.search.indexOf('preview=1') === -1) {
+            sessionStorage.setItem('sm_redirected', '1');
+            window.location.replace('index.html');
+            return;
+        }
+        sessionStorage.removeItem('sm_redirected');
+        if (isMobile) document.documentElement.classList.add('real-mobile');
+    })();
+    </script>
+    <link rel="stylesheet" href="mobile.css">
+    <script src="chart.umd.min.js"></script>
+    <script src="xlsx.full.min.js"></script>
+</head>
+<body>
+<!-- 加载遮罩 -->
+<div id="m-loading-overlay" style="position:fixed;inset:0;background:#f5f7fa;display:flex;align-items:center;justify-content:center;z-index:99999;">
+    <div style="text-align:center;">
+        <div style="font-size:36px;margin-bottom:10px;animation:spin 1s linear infinite;">⚙️</div>
+        <div style="color:#888;font-size:13px;">正在加载数据...</div>
+    </div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<div class="phone-stage">
+    <div class="phone-frame">
+        <div class="phone-screen">
+            <div class="dynamic-island"></div>
+            <!-- 状态栏 -->
+            <div class="status-bar">
+                <span class="time" id="phone-time">9:41</span>
+                <span class="icons">📶 📶 🔋</span>
+            </div>
+
+            <!-- ========== 登录页 ========== -->
+            <div id="m-page-login" class="m-page active">
+                <div class="m-content" style="padding-bottom:0;">
+                    <div class="m-login">
+                        <div class="m-login-logo">
+                            <div class="icon">🏪</div>
+                            <h1>店铺经营管理平台</h1>
+                            <p>每日数据上报 · 智能分析 · 经营决策</p>
+                        </div>
+                        <div class="m-tabs">
+                            <button class="m-tab active" data-role="admin" onclick="mSwitchLoginTab('admin')">管理者</button>
+                            <button class="m-tab" data-role="store" onclick="mSwitchLoginTab('store')">店长</button>
+                        </div>
+                        <div class="m-form" id="m-admin-form">
+                            <div class="m-field"><label>账号</label><input type="text" id="m-admin-user" placeholder="管理账号" value="admin"></div>
+                            <div class="m-field"><label>密码</label><input type="password" id="m-admin-pass" placeholder="密码" value="admin123"></div>
+                            <button class="m-btn m-btn-primary" onclick="mHandleLogin('admin')">进入管理后台</button>
+                        </div>
+                        <div class="m-form hidden" id="m-store-form">
+                            <div class="m-field"><label>手机号</label><input type="tel" id="m-store-phone" placeholder="绑定的手机号" maxlength="11"></div>
+                            <div class="m-field"><label>密码</label><input type="password" id="m-store-pass" placeholder="默认密码123456" value="123456"></div>
+                            <button class="m-btn m-btn-primary" onclick="mHandleLogin('store')">进入数据填报</button>
+                            <p class="m-tip" style="text-align:center;">提示：可使用 13800010001~015 试登录</p>
+                        </div>
+                    </div>
+                    <p class="m-tip" style="text-align:center;margin-top:16px;"><a href="index.html" style="color:var(--primary);text-decoration:none;">切换到电脑版 →</a></p>
+                </div>
+            </div>
+
+            <!-- ========== 店长端 ========== -->
+            <div id="m-page-store" class="m-page">
+                <div class="m-nav-bar">
+                    <div>
+                        <div class="title" id="m-store-name">--</div>
+                        <div class="sub" id="m-store-manager">--</div>
+                    </div>
+                    <div class="right-actions">
+                        <button class="m-nav-btn-sm" onclick="mShowChangePwd()">修改密码</button>
+                        <button class="m-nav-btn-sm" onclick="mLogout()">退出</button>
+                    </div>
+                </div>
+                <div class="m-seg" style="margin:8px 16px 0;">
+                    <div class="m-seg-item active" data-tab="report" onclick="mSwitchStoreTab('report')">数据填报</div>
+                    <div class="m-seg-item" data-tab="query" onclick="mSwitchStoreTab('query')">查询修改</div>
+                </div>
+                <div class="m-content">
+                    <!-- 填报 -->
+                    <div id="m-store-report">
+                        <div class="m-form-card">
+                            <form onsubmit="mSubmitReport(event)">
+                                <div class="m-field" style="margin-bottom:12px;">
+                                    <label>上报日期 <span class="required">*</span></label>
+                                    <input type="date" id="m-report-date" required>
+                                </div>
+                                <div class="m-field hidden" id="m-store-select-container" style="margin-bottom:12px;">
+                                    <label>选择店铺 <span class="required">*</span></label>
+                                    <select id="m-store-select" onchange="mSwitchCurrentStore()"></select>
+                                </div>
+                                <div class="m-form-row">
+                                    <div class="m-field"><label>销售额(元) <span class="required">*</span></label><input type="number" id="m-report-sales" placeholder="15800" required min="0.01" step="0.01" oninput="mCalcAuto()"></div>
+                                    <div class="m-field"><label>客流量 <span class="required">*</span></label><input type="number" id="m-report-visitors" placeholder="320" required min="1" oninput="mCalcAuto()"></div>
+                                </div>
+                                <div class="m-form-row">
+                                    <div class="m-field"><label>购买人次 <span class="required">*</span></label><input type="number" id="m-report-buyers" placeholder="180" required min="1" oninput="mCalcAuto()"></div>
+                                    <div class="m-field"><label>客单价</label><input type="text" id="m-report-avg" class="auto-val" placeholder="自动" readonly></div>
+                                </div>
+                                <div class="m-field" style="margin-bottom:12px;">
+                                    <label>转化率</label>
+                                    <input type="text" id="m-report-conv" class="auto-val" placeholder="自动" readonly>
+                                </div>
+                                <div class="m-field" style="margin-bottom:12px;">
+                                    <label>备注说明（选填）</label>
+                                    <textarea id="m-report-notes" placeholder="如：促销活动/设备维修等" rows="2" style="padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"></textarea>
+                                </div>
+                                <div class="m-form-actions">
+                                    <button type="submit" class="m-btn m-btn-primary">提交数据</button>
+                                    <button type="button" class="m-btn m-btn-secondary" onclick="mClearForm()">清空</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <!-- 查询 -->
+                    <div id="m-store-query" class="hidden">
+                        <div class="m-filter-bar">
+                            <input type="date" id="m-q-start" style="flex:1;">
+                            <input type="date" id="m-q-end" style="flex:1;">
+                            <button class="m-btn m-btn-primary" style="padding:8px 14px;font-size:13px;" onclick="mLoadHistory()">查询</button>
+                        </div>
+                        <div id="m-history-list" class="m-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 管理端 ========== -->
+            <div id="m-page-admin" class="m-page">
+                <div class="m-nav-bar">
+                    <div>
+                        <div class="title" id="m-admin-title">数据总看板</div>
+                        <div class="sub" id="m-admin-sub">经营管理平台</div>
+                    </div>
+                    <div class="right-actions">
+                        <button class="m-nav-btn-sm" onclick="mShowAdminChangePwd()">密码</button>
+                        <button class="m-nav-btn-sm" onclick="mLogout()">退出</button>
+                    </div>
+                </div>
+                <div class="m-content">
+                    <!-- 看板 -->
+                    <div id="m-sec-dashboard">
+                        <div class="m-filter-bar">
+                            <select id="m-dash-preset" onchange="mDashPresetChange()">
+                                <option value="today">当日</option>
+                                <option value="week" selected>本周</option>
+                                <option value="month">本月</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                            <div class="m-custom-range" id="m-dash-custom">
+                                <div style="display:flex;gap:6px;">
+                                    <input type="date" id="m-dash-start" style="flex:1;" onchange="mRefreshDash()">
+                                    <input type="date" id="m-dash-end" style="flex:1;" onchange="mRefreshDash()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="m-stat-grid">
+                            <div class="m-stat-card"><div class="icon">📐</div><div class="label">总经营面积</div><div class="value" id="m-dash-area">--</div><div class="unit">m²</div></div>
+                            <div class="m-stat-card"><div class="icon">🏪</div><div class="label">总店铺数</div><div class="value" id="m-dash-count">--</div><div class="unit">家</div></div>
+                            <div class="m-stat-card"><div class="icon">💰</div><div class="label">总销售额</div><div class="value" id="m-dash-sales">--</div><div class="change" id="m-dash-change"></div></div>
+                            <div class="m-stat-card"><div class="icon">👥</div><div class="label">总客流量</div><div class="value" id="m-dash-visitors">--</div></div>
+                            <div class="m-stat-card"><div class="icon">🛒</div><div class="label">总购买人次</div><div class="value" id="m-dash-buyers">--</div></div>
+                            <div class="m-stat-card"><div class="icon">📊</div><div class="label">平均转化率</div><div class="value" id="m-dash-conv">--</div></div>
+                        </div>
+                        <div class="m-section-title">业态汇总</div>
+                        <div id="m-dash-cats"></div>
+                        <div class="m-chart-box"><h3>业态销售额占比</h3><canvas id="m-chart-pie"></canvas></div>
+                        <div class="m-chart-box"><h3>销售额趋势</h3><canvas id="m-chart-trend"></canvas></div>
+                    </div>
+
+                    <!-- 数据查询 -->
+                    <div id="m-sec-dataquery" class="hidden">
+                        <div class="m-filter-bar">
+                            <select id="m-dq-preset" onchange="mDqPresetChange()">
+                                <option value="today" selected>当日</option>
+                                <option value="week">本周</option>
+                                <option value="month">本月</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                            <select id="m-dq-cat" onchange="mRefreshDq()"></select>
+                        </div>
+                        <div class="m-custom-range" id="m-dq-custom">
+                            <div style="display:flex;gap:6px;margin-bottom:8px;">
+                                <input type="date" id="m-dq-start" style="flex:1;" onchange="mRefreshDq()">
+                                <input type="date" id="m-dq-end" style="flex:1;" onchange="mRefreshDq()">
+                            </div>
+                        </div>
+                        <input type="text" id="m-dq-search" placeholder="搜索店铺名称..." style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;" oninput="mRefreshDq()">
+                        <button class="m-btn m-btn-secondary" style="width:100%;margin-bottom:10px;font-size:13px;padding:10px;" onclick="mDownloadXLSX()">📥 下载当前数据为 XLSX</button>
+                        <div class="m-summary-bar" id="m-dq-summary"></div>
+                        <div id="m-dq-list"></div>
+                    </div>
+
+                    <!-- 店铺管理 -->
+                    <div id="m-sec-stores" class="hidden">
+                        <div class="m-filter-bar">
+                            <select id="m-store-filter" onchange="mRefreshStores()"></select>
+                            <input type="text" id="m-store-search" placeholder="搜索..." style="flex:1;" oninput="mRefreshStores()">
+                            <button class="m-btn m-btn-primary" style="padding:8px 14px;font-size:13px;" onclick="mShowAddStore()">+ 新增</button>
+                        </div>
+                        <div id="m-store-list"></div>
+                    </div>
+
+                    <!-- 异常预警 -->
+                    <div id="m-sec-alerts" class="hidden">
+                        <div class="m-seg">
+                            <div class="m-seg-item active" data-atype="abnormal" onclick="mSwitchAlertTab('abnormal')">数据异常</div>
+                            <div class="m-seg-item" data-atype="unreported" onclick="mSwitchAlertTab('unreported')">未上报</div>
+                            <div class="m-seg-item" data-atype="feedback" onclick="mSwitchAlertTab('feedback')">店长反馈</div>
+                        </div>
+                        <div id="m-alert-abnormal"></div>
+                        <div id="m-alert-unreported" class="hidden"></div>
+                        <div id="m-alert-feedback" class="hidden">
+                            <div class="m-filter-bar">
+                                <input type="date" id="m-fb-start" style="flex:1;">
+                                <input type="date" id="m-fb-end" style="flex:1;">
+                                <button class="m-btn m-btn-primary" style="padding:8px 14px;font-size:13px;" onclick="mRefreshFeedback()">查询</button>
+                            </div>
+                            <div id="m-feedback-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 底部Tab -->
+                <div class="m-tab-bar">
+                    <div class="m-tab-item active" data-tab="dashboard" onclick="mSwitchAdminTab('dashboard')">
+                        <span class="tab-icon">📊</span><span class="tab-label">看板</span>
+                    </div>
+                    <div class="m-tab-item" data-tab="dataquery" onclick="mSwitchAdminTab('dataquery')">
+                        <span class="tab-icon">📋</span><span class="tab-label">查询</span>
+                    </div>
+                    <div class="m-tab-item" data-tab="stores" onclick="mSwitchAdminTab('stores')">
+                        <span class="tab-icon">🏪</span><span class="tab-label">店铺</span>
+                    </div>
+                    <div class="m-tab-item" data-tab="alerts" onclick="mSwitchAdminTab('alerts')">
+                        <span class="tab-icon">⚠️</span><span class="tab-label">预警</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 弹窗 ========== -->
+            <!-- 店铺编辑弹窗 -->
+            <div id="m-modal-store" class="m-modal">
+                <div class="m-modal-card">
+                    <div class="m-modal-header"><h3 id="m-store-edit-title">店铺信息</h3><button class="m-modal-close" onclick="mHideStoreModal()">×</button></div>
+                    <input type="hidden" id="m-edit-store-id">
+                    <div class="m-field" style="margin-bottom:10px;"><label>商铺号 <span class="required">*</span></label><input type="text" id="m-edit-shop-no" placeholder="如 A-101"></div>
+                    <div class="m-field" style="margin-bottom:10px;"><label>店铺名称 <span class="required">*</span></label><input type="text" id="m-edit-store-name" placeholder="店铺名称"></div>
+                    <div class="m-form-row">
+                        <div class="m-field"><label>业态 <span class="required">*</span></label><select id="m-edit-store-category"></select></div>
+                        <div class="m-field"><label>所在区域</label><input type="text" id="m-edit-store-area" placeholder="如 A区"></div>
+                    </div>
+                    <div class="m-form-row">
+                        <div class="m-field"><label>面积(m²)</label><input type="number" id="m-edit-store-area-size" min="0" placeholder="120"></div>
+                        <div class="m-field"><label>店长姓名</label><input type="text" id="m-edit-store-manager" placeholder="店长姓名"></div>
+                    </div>
+                    <div class="m-field" style="margin-bottom:10px;"><label>联系电话</label><input type="tel" id="m-edit-store-phone" maxlength="11" placeholder="手机号"></div>
+                    <div class="m-modal-footer">
+                        <button class="m-btn m-btn-primary" id="m-store-save-btn" onclick="mSaveStore()">保存</button>
+                        <button class="m-btn m-btn-secondary" onclick="mHideStoreModal()">取消</button>
+                    </div>
+                    <button class="m-btn" id="m-store-delete-btn" style="width:100%;margin-top:10px;background:var(--danger-light);color:var(--danger);font-size:14px;display:none;" onclick="mDeleteStore()">🗑 删除此店铺</button>
+                </div>
+            </div>
+
+            <!-- 修改密码 -->
+            <div id="m-modal-pwd" class="m-modal">
+                <div class="m-modal-card">
+                    <div class="m-modal-header"><h3>修改密码</h3><button class="m-modal-close" onclick="mHidePwd()">×</button></div>
+                    <div class="m-field" style="margin-bottom:12px;"><label>当前密码</label><input type="password" id="m-old-pwd" placeholder="当前密码"></div>
+                    <div class="m-field" style="margin-bottom:12px;"><label>新密码</label><input type="password" id="m-new-pwd" placeholder="至少6位"></div>
+                    <div class="m-field" style="margin-bottom:12px;"><label>确认新密码</label><input type="password" id="m-confirm-pwd" placeholder="再次输入"></div>
+                    <div class="m-modal-footer"><button class="m-btn m-btn-primary" id="m-pwd-confirm-btn" onclick="mChangePwd()">确认</button><button class="m-btn m-btn-secondary" onclick="mHidePwd()">取消</button></div>
+                </div>
+            </div>
+
+            <!-- 修改数据 -->
+            <div id="m-modal-edit" class="m-modal">
+                <div class="m-modal-card">
+                    <div class="m-modal-header"><h3 id="m-edit-title">修改数据</h3><button class="m-modal-close" onclick="mHideEdit()">×</button></div>
+                    <input type="hidden" id="m-edit-date">
+                    <input type="hidden" id="m-edit-store-id">
+                    <div class="m-form-row">
+                        <div class="m-field"><label>销售额(元) <span class="required">*</span></label><input type="number" id="m-edit-sales" min="0.01" step="0.01" oninput="mCalcEditAuto()"></div>
+                        <div class="m-field"><label>客流量 <span class="required">*</span></label><input type="number" id="m-edit-visitors" min="1" oninput="mCalcEditAuto()"></div>
+                    </div>
+                    <div class="m-form-row">
+                        <div class="m-field"><label>购买人次 <span class="required">*</span></label><input type="number" id="m-edit-buyers" min="1" oninput="mCalcEditAuto()"></div>
+                        <div class="m-field"><label>客单价</label><input type="text" id="m-edit-avg" class="auto-val" readonly></div>
+                    </div>
+                    <div class="m-field" style="margin-bottom:12px;"><label>转化率</label><input type="text" id="m-edit-conv" class="auto-val" readonly></div>
+                    <div class="m-field" style="margin-bottom:12px;"><label>备注</label><input type="text" id="m-edit-notes" placeholder="选填"></div>
+                    <div class="m-modal-footer"><button class="m-btn m-btn-primary" id="m-edit-confirm-btn" onclick="mSaveEdit()">保存</button><button class="m-btn m-btn-secondary" onclick="mHideEdit()">取消</button></div>
+                </div>
+            </div>
+
+            <!-- Toast -->
+            <div class="m-toast-container" id="m-toast-container"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/bcryptjs/2.4.3/bcrypt.min.js"></script>
+<script src="supabase-client.js"></script>
+<script src="data.js"></script>
+<script src="mobile.js"></script>
+<script>
+// 异步初始化：从服务器加载数据
+(async function() {
+    await initAppData();
+    var overlay = document.getElementById('m-loading-overlay');
+    if (overlay) overlay.style.display = 'none';
+    // 定时从服务器刷新数据（60秒，店长端）
+    setInterval(async function() {
+        if (mCurrentUser) {
+            await refreshFromServer();
+        }
+    }, 60000);
+})();
+</script>
+</body>
+</html>
