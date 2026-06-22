@@ -33,8 +33,13 @@ function mapRow(row, mapping) {
 }
 function mapArray(arr, mapping) { return (arr || []).map(r => mapRow(r, mapping)); }
 
-// bcrypt 兼容
-const _bc = typeof bcrypt !== 'undefined' ? bcrypt : (typeof bcryptjs !== 'undefined' ? bcryptjs : null);
+// bcrypt 兼容（按需检测，支持异步加载）
+function getBcrypt() {
+    if (typeof bcrypt !== 'undefined') return bcrypt;
+    if (typeof bcryptjs !== 'undefined') return bcryptjs;
+    if (typeof dcodeIO !== 'undefined' && dcodeIO.bcrypt) return dcodeIO.bcrypt;
+    return null;
+}
 
 const API = {
     _token: null,
@@ -76,19 +81,19 @@ const API = {
 
     // ===== 认证 =====
     async login(role, credentials) {
-        if (!_bc) throw new Error('bcrypt library not loaded');
+        if (!getBcrypt()) throw new Error('bcrypt library not loaded');
         if (role === 'admin') {
             const users = await this._fetch(`app_users?username=eq.${encodeURIComponent(credentials.username)}&select=*`);
             const user = users && users[0];
             if (!user) throw new Error('账号不存在');
-            if (!_bc.compareSync(credentials.password, user.password)) throw new Error('密码错误');
+            if (!getBcrypt().compareSync(credentials.password, user.password)) throw new Error('密码错误');
             this._currentUser = { userId: user.id, role: 'admin', name: user.name };
         } else {
             const phone = (credentials.phone || '').trim();
             const users = await this._fetch(`app_users?phone=eq.${encodeURIComponent(phone)}&select=*`);
             const user = users && users[0];
             if (!user) throw new Error('该手机号未绑定任何店铺');
-            if (!_bc.compareSync(credentials.password, user.password)) throw new Error('密码错误');
+            if (!getBcrypt().compareSync(credentials.password, user.password)) throw new Error('密码错误');
             this._currentUser = { userId: user.id, role: 'store', storeId: user.store_id, phone: user.phone, name: user.name };
         }
         this.setToken('supabase_session');
@@ -96,15 +101,15 @@ const API = {
     },
 
     async changePassword(oldPassword, newPassword) {
-        if (!_bc) throw new Error('bcrypt library not loaded');
+        if (!getBcrypt()) throw new Error('bcrypt library not loaded');
         const user = this._currentUser;
         const field = user.role === 'admin' ? 'username' : 'phone';
         const value = user.role === 'admin' ? 'admin' : user.phone;
         const users = await this._fetch(`app_users?${field}=eq.${encodeURIComponent(value)}&select=*`);
         const dbUser = users && users[0];
         if (!dbUser) throw new Error('用户不存在');
-        if (!_bc.compareSync(oldPassword, dbUser.password)) throw new Error('当前密码错误');
-        const hash = _bc.hashSync(newPassword, 10);
+        if (!getBcrypt().compareSync(oldPassword, dbUser.password)) throw new Error('当前密码错误');
+        const hash = getBcrypt().hashSync(newPassword, 10);
         await this._fetchRaw(`app_users?id=eq.${dbUser.id}`, { method: 'PATCH', body: JSON.stringify({ password: hash }) });
     },
 
@@ -180,7 +185,7 @@ const API = {
         };
         await this._fetch('stores', { method: 'POST', body: JSON.stringify(body) });
         if (data.managerPhone) {
-            const hash = _bc ? _bc.hashSync('123456', 10) : '$2a$10$placeholder';
+            const hash = getBcrypt() ? getBcrypt().hashSync('123456', 10) : '$2a$10$placeholder';
             await this._fetch('app_users', {
                 method: 'POST',
                 body: JSON.stringify({ phone: data.managerPhone, name: data.managerName || '', store_id: newId, password: hash, role: 'store' })
